@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>日本地图 - 按地方区分</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        padding: 20px;
+        overflow: hidden;
+      }
+
+      .container {
+        max-width: 100%;
+        height: calc(100vh - 40px);
+        margin: 0 auto;
+        background: white;
+        border-radius: 20px;
+        padding: 30px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        display: flex;
+        flex-direction: column;
+      }
+
+      h1 {
+        text-align: center;
+        color: #333;
+        margin-bottom: 20px;
+        font-size: 2.5em;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+        flex-shrink: 0;
+      }
+
+      .map-container {
+        width: 100%;
+        flex: 1;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 20px;
+        background: #e7c2c2;
+        border-radius: 10px;
+        overflow: hidden;
+      }
+
+      #map {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+
+      .geolonia-svg-map {
+        width: auto;
+        height: 100%;
+        max-width: 100%;
+        max-height: 100%;
+      }
+
+      .geolonia-svg-map .prefecture {
+        stroke: #ffffff;
+        stroke-width: 2;
+        cursor: pointer;
+        transition: all 0.3s ease;
+      }
+
+      .geolonia-svg-map .prefecture:hover {
+        filter: brightness(0.85);
+        stroke: #333;
+        stroke-width: 3;
+      }
+
+      .geolonia-svg-map .boundary-line {
+        stroke: #999999;
+        stroke-width: 1;
+      }
+
+      /* 地方区分颜色 */
+      .hokkaido {
+        fill: #ff6b6b;
+      }
+      .tohoku {
+        fill: #4ecdc4;
+      }
+      .kanto {
+        fill: #45b7d1;
+      }
+      .chubu {
+        fill: #ffa07a;
+      }
+      .kinki {
+        fill: #98d8c8;
+      }
+      .chugoku {
+        fill: #f7dc6f;
+      }
+      .shikoku {
+        fill: #bb8fce;
+      }
+      .kyushu-okinawa {
+        fill: #85c1e2;
+      }
+
+      .info-box {
+        position: fixed;
+        background: rgba(0, 0, 0, 0.9);
+        color: white;
+        padding: 15px 20px;
+        border-radius: 8px;
+        pointer-events: none;
+        display: none;
+        z-index: 1000;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        max-width: 250px;
+      }
+
+      .info-box.show {
+        display: block;
+      }
+
+      .info-box h3 {
+        margin-bottom: 8px;
+        font-size: 1.3em;
+        border-bottom: 2px solid white;
+        padding-bottom: 5px;
+      }
+
+      .info-box p {
+        margin: 5px 0;
+        font-size: 0.9em;
+      }
+
+      @media (max-width: 768px) {
+        .container {
+          padding: 15px;
+        }
+
+        h1 {
+          font-size: 1.8em;
+          margin-bottom: 15px;
+        }
+
+        .map-container {
+          padding: 10px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🗾 日本地图 - 八大地方区分</h1>
+
+      <div class="map-container">
+        <div id="map"></div>
+      </div>
+    </div>
+
+    <div class="info-box" id="infoBox">
+      <h3 id="prefName"></h3>
+      <p><strong>地方:</strong> <span id="regionName"></span></p>
+      <p><strong>都道府县代码:</strong> <span id="prefCode"></span></p>
+    </div>
+
+    <script>
+      // 地方区分映射（日文到中文）
+      const regionMap = {
+        hokkaido: "北海道地方",
+        tohoku: "东北地方",
+        kanto: "关东地方",
+        chubu: "中部地方",
+        kinki: "近畿地方",
+        chugoku: "中国地方",
+        shikoku: "四国地方",
+        "kyushu-okinawa": "九州-冲绳地方",
+      };
+
+      async function initMap() {
+        try {
+          // 根据屏幕宽度选择合适的 SVG 文件
+          const isMobile = window.innerWidth <= 768;
+          const svgFile = isMobile ? "./map-mobile.svg" : "./map-full.svg";
+
+          console.log(`加载 ${isMobile ? "移动版" : "完整版"} 地图...`);
+
+          // 获取本地 SVG 文件
+          const response = await fetch(svgFile);
+          const svgText = await response.text();
+
+          // 插入到页面
+          document.getElementById("map").innerHTML = svgText;
+
+          // 获取 SVG 元素
+          const svg = document.querySelector(".geolonia-svg-map");
+
+          // 删除顶层的 title 标签，避免显示 "Japanese Prefectures" tooltip
+          const svgTitle = svg.querySelector("title");
+          if (svgTitle && !svgTitle.closest(".prefecture")) {
+            svgTitle.remove();
+          }
+
+          // 为每个都道府县添加交互
+          const prefectures = document.querySelectorAll(
+            ".geolonia-svg-map .prefecture"
+          );
+
+          prefectures.forEach((prefecture) => {
+            const titleElement = prefecture.querySelector("title");
+            const prefName = titleElement.textContent.split("/")[0].trim();
+            const prefCode = prefecture.getAttribute("data-code");
+
+            // 获取地方区分的类名
+            const classList = prefecture.classList;
+            let regionClass = "";
+            classList.forEach((cls) => {
+              if (regionMap[cls]) {
+                regionClass = cls;
+              }
+            });
+
+            // 鼠标悬停效果
+            prefecture.addEventListener("mouseenter", (e) => {
+              const infoBox = document.getElementById("infoBox");
+              document.getElementById("prefName").textContent = prefName;
+              document.getElementById("regionName").textContent =
+                regionMap[regionClass] || "未知";
+              document.getElementById("prefCode").textContent = prefCode;
+              infoBox.classList.add("show");
+            });
+
+            prefecture.addEventListener("mousemove", (e) => {
+              const infoBox = document.getElementById("infoBox");
+              const offsetX = 20;
+              const offsetY = 20;
+
+              // 获取信息框的尺寸
+              const boxWidth = infoBox.offsetWidth;
+              const boxHeight = infoBox.offsetHeight;
+
+              // 获取视口尺寸
+              const viewportWidth = window.innerWidth;
+              const viewportHeight = window.innerHeight;
+
+              // 计算默认位置（鼠标右下方）
+              let left = e.pageX + offsetX;
+              let top = e.pageY + offsetY;
+
+              // 如果右侧超出屏幕，则显示在鼠标左侧
+              if (left + boxWidth > viewportWidth) {
+                left = e.pageX - boxWidth - offsetX;
+              }
+
+              // 如果下方超出屏幕，则显示在鼠标上方
+              if (top + boxHeight > viewportHeight) {
+                top = e.pageY - boxHeight - offsetY;
+              }
+
+              // 确保不会超出左边界和上边界
+              left = Math.max(10, left);
+              top = Math.max(10, top);
+
+              infoBox.style.left = left + "px";
+              infoBox.style.top = top + "px";
+            });
+
+            prefecture.addEventListener("mouseleave", () => {
+              document.getElementById("infoBox").classList.remove("show");
+            });
+          });
+
+          console.log("地图加载成功！");
+        } catch (error) {
+          console.error("加载地图失败:", error);
+          document.getElementById("map").innerHTML =
+            '<p style="color: red; text-align: center;">地图加载失败，请确保 svg 文件与 HTML 文件在同一目录下。</p>';
+        }
+      }
+
+      // 页面加载完成后初始化地图
+      window.addEventListener("DOMContentLoaded", initMap);
+
+      // 监听窗口大小变化，必要时重新加载地图
+      let resizeTimer;
+      let currentMapType = window.innerWidth <= 768 ? "mobile" : "full";
+
+      window.addEventListener("resize", () => {
+        // 防抖处理，避免频繁触发
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+          const isMobile = window.innerWidth <= 768;
+          const newMapType = isMobile ? "mobile" : "full";
+
+          // 只有在地图类型真正改变时才重新加载
+          if (newMapType !== currentMapType) {
+            currentMapType = newMapType;
+            console.log(
+              `屏幕尺寸变化，切换到${isMobile ? "移动版" : "完整版"}地图`
+            );
+            initMap();
+          }
+        }, 500); // 500ms 防抖延迟
+      });
+    </script>
+  </body>
+</html>
